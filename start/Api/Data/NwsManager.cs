@@ -1,12 +1,14 @@
-﻿using System.Text.Json;
-using System.Web;
+﻿using Api.Data;
+using Api.Diagnostics;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Caching.Memory;
-using Api.Data;
+using System.Diagnostics;
+using System.Text.Json;
+using System.Web;
 
 namespace Api
 {
-    public class NwsManager(HttpClient httpClient, IMemoryCache cache, IWebHostEnvironment webHostEnvironment)
+    public class NwsManager(HttpClient httpClient, IMemoryCache cache, IWebHostEnvironment webHostEnvironment, ILogger<NwsManager> logger)
     {
         private static readonly JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
 
@@ -47,22 +49,70 @@ namespace Api
 
         public async Task<Forecast[]> GetForecastByZoneAsync(string zoneId)
         {
-            // Create an exception every 5 calls to simulate and error for testing
-            forecastCount++;
-
-            if (forecastCount % 5 == 0)
+            // Create a logging scope with structured data
+            using var logScope = logger.BeginScope(new Dictionary<string, object>
             {
-                throw new Exception("Random exception thrown by NwsManager.GetForecastAsync");
-            }
+                ["ZoneId"] = zoneId,
+                ["RequestNumber"] = Interlocked.Increment(ref forecastCount)
+            });
 
-            var zoneIdSegment = HttpUtility.UrlEncode(zoneId);
-            var zoneUrl = $"https://weather-api/zones/forecast/{zoneIdSegment}/forecast";
-            var forecasts = await httpClient.GetFromJsonAsync<ForecastResponse>(zoneUrl, options);
-            return forecasts
-                   ?.Properties
-                   ?.Periods
-                   ?.Select(p => (Forecast)p)
-                   .ToArray() ?? [];
+            // Record the request in our metrics
+            NwsManagerDiagnostics.forecastRequestCounter.Add(1);
+            var stopwatch = Stopwatch.StartNew();
+
+            // Create a trace activity
+            using var activity = NwsManagerDiagnostics.activitySource.StartActivity("GetForecastByZoneAsync");
+            activity?.SetTag("zone.id", zoneId);
+
+            logger.LogInformation("🚀 Starting forecast request for zone {ZoneId}", zoneId);
+
+            try
+            {
+                // Create an exception every 5 calls to simulate and error for testing
+                forecastCount++;
+
+                if (forecastCount % 5 == 0)
+                {
+                    throw new Exception("Random exception thrown by NwsManager.GetForecastAsync");
+                }
+
+                var zoneIdSegment = HttpUtility.UrlEncode(zoneId);
+                var zoneUrl = $"https://weather-api/zones/forecast/{zoneIdSegment}/forecast";
+                var forecasts = await httpClient.GetFromJsonAsync<ForecastResponse>(zoneUrl, options);
+
+                stopwatch.Stop();
+
+                // Record the request duration
+                NwsManagerDiagnostics.forecastRequestDuration.Record(stopwatch.Elapsed.TotalSeconds);
+                activity?.SetTag("request.success", true);
+
+                logger.LogInformation(
+                    "📊 Retrieved forecast for zone {ZoneId} in {Duration:N0}ms with {PeriodCount} periods",
+                    zoneId,
+                    stopwatch.Elapsed.TotalMilliseconds,
+                    forecasts?.Properties?.Periods?.Count ?? 0
+                );
+
+                return forecasts
+                       ?.Properties
+                       ?.Periods
+                       ?.Select(p => (Forecast)p)
+                       .ToArray() ?? [];
+            }
+            catch (HttpRequestException ex)
+            {
+                // Record failures in our metrics
+                NwsManagerDiagnostics.failedRequestCounter.Add(1);
+                activity?.SetTag("request.success", false);
+
+                logger.LogError(
+                    ex,
+                    "❌ Failed to retrieve forecast for zone {ZoneId}. Status: {StatusCode}",
+                    zoneId,
+                    ex.StatusCode
+                );
+                throw;
+            }
         }
     }
 }
