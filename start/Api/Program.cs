@@ -1,5 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddRedisOutputCache("cache");
+
 builder.AddServiceDefaults();
 
 // Add services to the container.
