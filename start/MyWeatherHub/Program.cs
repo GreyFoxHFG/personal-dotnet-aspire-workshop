@@ -16,7 +16,18 @@ builder.Services.AddHttpClient<NwsManager>(c =>
     c.BaseAddress = new(url);
 });
 
+builder.AddNpgsqlDbContext<MyWeatherContext>(connectionName: "weatherdb");
+
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<MyWeatherContext>();
+        await context.Database.EnsureCreatedAsync();
+    }
+}
 
 app.MapDefaultEndpoints();
 
