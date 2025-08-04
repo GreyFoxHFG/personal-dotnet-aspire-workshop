@@ -18,28 +18,28 @@ namespace Api
 
                 // To get the live zone data from NWS, uncomment the following code and comment out the return statement below.
                 // This is required if you are deploying to ACA.
-                //var zones = await httpClient.GetFromJsonAsync<ZonesResponse>("https://api.weather.gov/zones?type=forecast", options);
-                //return zones?.Features
-                //            ?.Where(f => f.Properties?.ObservationStations?.Count > 0)
-                //            .Select(f => (Zone)f)
-                //            .Distinct()
-                //            .ToArray() ?? [];
-
-                // Deserialize the zones.json file from the wwwroot folder
-                var zonesFilePath = Path.Combine(webHostEnvironment.WebRootPath, "zones.json");
-                if (!File.Exists(zonesFilePath))
-                {
-                    return [];
-                }
-
-                using var zonesJson = File.OpenRead(zonesFilePath);
-                var zones = await JsonSerializer.DeserializeAsync<ZonesResponse>(zonesJson, options);
-
+                var zones = await httpClient.GetFromJsonAsync<ZonesResponse>("https://weather-api/zones?type=forecast", options);
                 return zones?.Features
                             ?.Where(f => f.Properties?.ObservationStations?.Count > 0)
                             .Select(f => (Zone)f)
                             .Distinct()
                             .ToArray() ?? [];
+
+                //// Deserialize the zones.json file from the wwwroot folder
+                //var zonesFilePath = Path.Combine(webHostEnvironment.WebRootPath, "zones.json");
+                //if (!File.Exists(zonesFilePath))
+                //{
+                //    return [];
+                //}
+
+                //using var zonesJson = File.OpenRead(zonesFilePath);
+                //var zones = await JsonSerializer.DeserializeAsync<ZonesResponse>(zonesJson, options);
+
+                //return zones?.Features
+                //            ?.Where(f => f.Properties?.ObservationStations?.Count > 0)
+                //            .Select(f => (Zone)f)
+                //            .Distinct()
+                //            .ToArray() ?? [];
             });
         }
 
@@ -56,7 +56,7 @@ namespace Api
             }
 
             var zoneIdSegment = HttpUtility.UrlEncode(zoneId);
-            var zoneUrl = $"https://api.weather.gov/zones/forecast/{zoneIdSegment}/forecast";
+            var zoneUrl = $"https://weather-api/zones/forecast/{zoneIdSegment}/forecast";
             var forecasts = await httpClient.GetFromJsonAsync<ForecastResponse>(zoneUrl, options);
             return forecasts
                    ?.Properties
@@ -75,7 +75,7 @@ namespace Microsoft.Extensions.DependencyInjection
         {
             services.AddHttpClient<Api.NwsManager>(client =>
             {
-                client.BaseAddress = new Uri("https://api.weather.gov/");
+                client.BaseAddress = new Uri("https://weather-api/");
                 client.DefaultRequestHeaders.Add("User-Agent", "Microsoft - .NET Aspire Demo");
             });
 
